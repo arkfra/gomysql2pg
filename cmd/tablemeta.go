@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/viper"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 var tabRet []string
@@ -195,7 +196,7 @@ func (tb *Table) IdxCreate(logDir string) (result []string) {
 	failedCount := 0
 	id := 0
 	// 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句
-	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE \"', TABLE_NAME, '\" ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON \"', table_name, '\"(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' \"', table_name, '\"' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text,INDEX_NAME,concat('alter table \"',table_name,'\"',' DISTRIBUTE BY hash ','(',GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ),');') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
+	sql := `SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE "', TABLE_NAME, '" ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON "', table_name, '"(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' "', table_name, '"' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text,INDEX_NAME,concat('alter table "',table_name,'"',' DISTRIBUTE BY hash ','(',GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ),');') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE, INDEX_TYPE ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;`
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {

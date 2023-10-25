@@ -2,29 +2,25 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/liushuochen/gotable"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/liushuochen/gotable"
+	"github.com/spf13/viper"
+	"github.com/urfave/cli/v3"
 )
 
 var dbRowsSlice [][]string
 
 //var dbRowsSlice2 []string
 
-func init() {
-	rootCmd.AddCommand(compareDbCmd)
-}
-
-var compareDbCmd = &cobra.Command{
-	Use:   "compareDb",
-	Short: "Compare entire source and target database table rows",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var compareDbCmd = &cli.Command{
+	Name:        "compareDb",
+	Description: "Compare entire source and target database table rows",
+	Action: func(cmd *cli.Context) error {
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		// 每页的分页记录数,仅全库迁移时有效
@@ -69,11 +65,13 @@ var compareDbCmd = &cobra.Command{
 		cost := time.Since(start)
 		// 输出全库数量的表
 		tableTotal, err := gotable.Create("Table", "SourceRows", "DestRows", "DestIsExist", "isOk")
+		if err != nil {
+			return err
+		}
 		// 输出比对信息失败的表
 		tableFailed, err := gotable.Create("Table", "SourceRows", "DestRows", "DestIsExist", "isOk")
 		if err != nil {
-			fmt.Println("Create table failed: ", err.Error())
-			return
+			return fmt.Errorf("create table failed: %s", err.Error())
 		}
 		for _, r := range dbRowsSlice {
 			if r[4] == "NO" {
@@ -96,6 +94,8 @@ var compareDbCmd = &cobra.Command{
 		fmt.Println("Table Compare Result (Only Not Ok Displayed)")
 		fmt.Println(tableFailed)
 		fmt.Println("Table Compare finish elapsed time ", cost)
+
+		return nil
 	},
 }
 

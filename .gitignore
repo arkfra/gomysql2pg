@@ -7,3 +7,4 @@ win_*
 release
 *.tar.gz
 log/*
+gomysql2pg

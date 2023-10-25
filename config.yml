@@ -1,0 +1,16 @@
+# data source: https://github.com/datacharmer/test_db
+src: mysq://root:123456@172.20.4.100:3306/employees
+dest: postgres://postres:123456@172.20.4.100:5432/employees
+pageSize: 100000
+maxParallel: 20
+charInLength: false
+Distributed: false
+tables:
+  - name: dept_emp
+    tasks:
+      - query: SELECT * FROM dept_emp WHERE emp_no > 10010
+  - name: employees
+    tasks:
+      - conditions: emp_no IN (SELECT emp_no FROM dept_emp WHERE emp_no > 1001)
+exclude:
+  salaries

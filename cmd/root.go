@@ -2,13 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"github.com/lib/pq"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,34 +18,82 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-
+	"github.com/arkfra/gomysql2pg/internal/connect"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/liushuochen/gotable"
 	"github.com/mitchellh/go-homedir"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"gomysql2pg/connect"
+	"github.com/urfave/cli/v3"
 )
 
 var log = logrus.New()
-var cfgFile string
 var selFromYml bool
 
 var wg sync.WaitGroup
 var wg2 sync.WaitGroup
 var responseChannel = make(chan string, 1) // 设定为全局变量，用于在goroutine协程里接收copy行数据失败的计数
+
 // rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "gomysql2pg",
-	Short: "",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
-		// 获取配置文件中的数据库连接字符串
-		connStr := getConn()
-		mysql2pg(connStr)
-	},
+var rootCmd *cli.Command
+
+// initConfig reads in config file and ENV variables if set.
+func init() {
+	// Find home directory.
+	home, err := homedir.Dir()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	rootCmd = &cli.Command{
+		Name: "gomysql2pg",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "config",
+				Usage: "config file (default is $HOME/.config/gomysql2pg/default.yaml)",
+				Value: path.Join(home, ".config", "gomysql2pg", "default.yaml"),
+			},
+			&cli.BoolFlag{
+				Name:    "selFromYml",
+				Aliases: []string{"s"},
+				Usage:   "select from yml true",
+			},
+			&cli.BoolFlag{
+				Name:    "tableOnly",
+				Aliases: []string{"t"},
+				Usage:   "only create table true",
+			},
+		},
+		Before: func(ctx *cli.Context) error {
+			slog.Info(ctx.String("config"))
+			return nil
+		},
+		Action: func(cmd *cli.Context) error {
+			// 获取配置文件中的数据库连接字符串
+			connStr := getConn()
+			mysql2pg(connStr)
+			return nil
+		},
+	}
+
+	rootCmd.Commands = append(rootCmd.Commands, compareDbCmd)
+	rootCmd.Commands = append(rootCmd.Commands,
+		createTableCmd,
+		seqOnlyCmd,
+		idxOnlyCmd,
+		viewOnlyCmd,
+		onlyDataCmd,
+	)
+	rootCmd.Commands = append(rootCmd.Commands, versionCmd)
+}
+
+func Execute() { // init 函数初始化之后再运行此Execute函数
+	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
 // 表行数据迁移失败的计数
@@ -59,8 +109,8 @@ func response() {
 
 func mysql2pg(connStr *connect.DbConnStr) {
 	// 自动侦测终端是否输入Ctrl+c,若按下,主动关闭数据库查询
-	exitChan := make(chan os.Signal)
-	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
+	exitChan := make(chan os.Signal, 1)
+	signal.Notify(exitChan, os.Interrupt, syscall.SIGTERM)
 	go exitHandle(exitChan)
 	// 创建运行日志目录
 	logDir, _ := filepath.Abs(CreateDateDir(""))
@@ -100,8 +150,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		tableMap = fetchTableMap(pageSize, excludeTab)
 	}
 	// 实例初始化，调用接口中创建目标表的方法
-	var db Database
-	db = new(Table)
+	var db Database = new(Table)
 	// 从yml配置文件中获取迁移数据时最大运行协程数
 	maxParallel := viper.GetInt("maxParallel")
 	if maxParallel == 0 {
@@ -169,7 +218,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	// 表结构创建以及数据迁移结果追加到切片,进行整合
 	rowsAll = append(rowsAll, tabRet, tableDataRet)
 	// 如果指定-s模式不创建下面对象
-	if selFromYml != true {
+	if !selFromYml {
 		// 创建序列
 		seqRet := db.SeqCreate(logDir)
 		// 创建索引、约束
@@ -285,7 +334,7 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 func preMigData(tableName string, sqlFullSplit []string) (dbCol []string, dbColType []string, tableNotExist bool) {
 	var sqlCol string
 	// 在写数据前，先清空下目标表数据
-	truncateSql := "truncate table " + fmt.Sprintf("\"") + tableName + fmt.Sprintf("\"")
+	truncateSql := fmt.Sprintf(`truncate table "%s"`, tableName)
 	if _, err := destDb.Exec(truncateSql); err != nil {
 		log.Error("truncate ", tableName, " failed   ", err)
 		tableNotExist = true
@@ -502,48 +551,4 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	log.Info(fmt.Sprintf("%v Taskid[%d] table %v complete,processed %d rows,execTime %s", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName, totalRow, cost))
 	//ch <- 0
 	<-ch // 通道向外发送数据
-}
-
-func Execute() { // init 函数初始化之后再运行此Execute函数
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
-
-// 程序中第一个调用的函数,先初始化config
-func init() {
-	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gomysql2pg.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&selFromYml, "selFromYml", "s", false, "select from yml true")
-	//rootCmd.PersistentFlags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
-}
-
-// initConfig reads in config file and ENV variables if set.
-func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := homedir.Dir()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		// Search config in home directory with name ".gomysql2pg" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".gomysql2pg")
-	}
-
-	viper.AutomaticEnv() // read in environment variables that match
-
-	// 通过viper读取配置文件进行加载
-	if err := viper.ReadInConfig(); err == nil {
-		log.Info("Using config file:", viper.ConfigFileUsed())
-	} else {
-		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
-	}
-	log.Info("Using selFromYml:", selFromYml)
 }

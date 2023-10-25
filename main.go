@@ -1,7 +1,7 @@
 package main
 
 import (
-	"gomysql2pg/cmd"
+	"github.com/arkfra/gomysql2pg/cmd"
 )
 
 func main() {

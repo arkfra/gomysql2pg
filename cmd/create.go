@@ -2,33 +2,32 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/liushuochen/gotable"
-	"github.com/spf13/viper"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"time"
 
-	"github.com/spf13/cobra"
+	"github.com/liushuochen/gotable"
+	"github.com/spf13/viper"
+	"github.com/urfave/cli/v3"
 )
 
 var tableOnly bool
 
-func init() {
-	rootCmd.AddCommand(createTableCmd)
-	rootCmd.AddCommand(seqOnlyCmd)
-	rootCmd.AddCommand(idxOnlyCmd)
-	rootCmd.AddCommand(viewOnlyCmd)
-	rootCmd.AddCommand(onlyDataCmd)
-	createTableCmd.Flags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
-}
-
-var createTableCmd = &cobra.Command{
-	Use:   "createTable",
-	Short: "Create meta table and no table data rows",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var createTableCmd = &cli.Command{
+	Name:        "createTable",
+	Description: "Create meta table and no table data rows",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "tableOnly",
+			Aliases: []string{"t"},
+			Usage:   "only create table true",
+			Value:   false,
+		},
+	},
+	Action: func(cmd *cli.Context) error {
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		// 每页的分页记录数,仅全库迁移时有效
@@ -79,14 +78,14 @@ var createTableCmd = &cobra.Command{
 		cost := time.Since(start)
 		log.Info("Table structure synced from MySQL to PostgreSQL ,Source Table Total ", tableCount, " Failed Total ", strconv.Itoa(failedCount))
 		fmt.Println("Table Create finish elapsed time ", cost)
+		return nil
 	},
 }
 
-var seqOnlyCmd = &cobra.Command{
-	Use:   "seqOnly",
-	Short: "Create sequence",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var seqOnlyCmd = &cli.Command{
+	Name:        "seqOnly",
+	Description: "Create sequence",
+	Action: func(cmd *cli.Context) error {
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		PrepareSrc(connStr)
@@ -106,17 +105,16 @@ var seqOnlyCmd = &cobra.Command{
 		multiWriter := io.MultiWriter(os.Stdout, f)
 		log.SetOutput(multiWriter)
 		// 实例初始化，调用接口中创建目标表的方法
-		var db Database
-		db = new(Table)
+		var db Database = new(Table)
 		db.SeqCreate(logDir)
+		return nil
 	},
 }
 
-var idxOnlyCmd = &cobra.Command{
-	Use:   "idxOnly",
-	Short: "Create index",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var idxOnlyCmd = &cli.Command{
+	Name:        "idxOnly",
+	Description: "Create index",
+	Action: func(cmd *cli.Context) error {
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		PrepareSrc(connStr)
@@ -136,17 +134,16 @@ var idxOnlyCmd = &cobra.Command{
 		multiWriter := io.MultiWriter(os.Stdout, f)
 		log.SetOutput(multiWriter)
 		// 实例初始化，调用接口中创建目标表的方法
-		var db Database
-		db = new(Table)
+		var db Database = new(Table)
 		db.IdxCreate(logDir)
+		return nil
 	},
 }
 
-var viewOnlyCmd = &cobra.Command{
-	Use:   "viewOnly",
-	Short: "Create view",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var viewOnlyCmd = &cli.Command{
+	Name:        "viewOnly",
+	Description: "Create view",
+	Action: func(cmd *cli.Context) error {
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		PrepareSrc(connStr)
@@ -166,17 +163,16 @@ var viewOnlyCmd = &cobra.Command{
 		multiWriter := io.MultiWriter(os.Stdout, f)
 		log.SetOutput(multiWriter)
 		// 实例初始化，调用接口中创建目标表的方法
-		var db Database
-		db = new(Table)
+		var db Database = new(Table)
 		db.ViewCreate(logDir)
+		return nil
 	},
 }
 
-var onlyDataCmd = &cobra.Command{
-	Use:   "onlyData",
-	Short: "only transfer table data rows",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+var onlyDataCmd = &cli.Command{
+	Name:        "onlyData",
+	Description: "only transfer table data rows",
+	Action: func(cmd *cli.Context) error {
 		migDataStart := time.Now()
 		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
@@ -195,7 +191,7 @@ var onlyDataCmd = &cobra.Command{
 		}
 		// 创建运行日志目录
 		logDir, _ := filepath.Abs(CreateDateDir(""))
-		f, err := os.OpenFile(logDir+"/"+"run.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+		f, err := os.OpenFile(path.Join(logDir, "run.log"), os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -257,8 +253,7 @@ var onlyDataCmd = &cobra.Command{
 		// 输出配置文件信息
 		tblConfig, err := gotable.Create("SourceDb", "DestDb", "MaxParallel", "PageSize")
 		if err != nil {
-			fmt.Println("Create tblConfig failed: ", err.Error())
-			return
+			return fmt.Errorf("create tblConfig failed: %s", err.Error())
 		}
 		ymlConfig := []string{connStr.SrcHost + "-" + connStr.SrcDatabase, connStr.DestHost + "-" + connStr.DestDatabase, strconv.Itoa(maxParallel), strconv.Itoa(pageSize)}
 		tblConfig.AddRow(ymlConfig)
@@ -266,8 +261,7 @@ var onlyDataCmd = &cobra.Command{
 		// 数据库对象迁移后信息
 		table, err := gotable.Create("Object", "BeginTime", "EndTime", "DataErrorCount", "ElapsedTime")
 		if err != nil {
-			fmt.Println("Create table failed: ", err.Error())
-			return
+			return fmt.Errorf("create table failed: %s", err.Error())
 		}
 		table.AddRow(tableDataRet)
 		table.Align("Object", 1)
@@ -275,5 +269,6 @@ var onlyDataCmd = &cobra.Command{
 		table.Align("ElapsedTime", 1)
 		fmt.Println(table)
 		log.Info(fmt.Sprintf("All Table Data Finish Total Elapsed TIme %s The Report Dir %s", migCost, logDir))
+		return nil
 	},
 }

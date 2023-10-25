@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/viper"
-	"gomysql2pg/connect"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/arkfra/gomysql2pg/internal/connect"
+	"github.com/spf13/viper"
 )
 
 var srcDb *sql.DB
@@ -63,6 +65,7 @@ func PrepareDest(connStr *connect.DbConnStr) {
 	destDatabase := connStr.DestDatabase
 	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%v sslmode=disable", destHost,
 		destUserName, destPassword, destDatabase, destPort)
+	conn = strings.Replace(conn, "password= ", "", 1)
 	var err error
 	destDb, err = sql.Open("postgres", conn)
 	if err != nil {
@@ -176,7 +179,6 @@ func cleanDBconn() {
 
 // 监控来自终端的信号，如果按下了ctrl+c，断开数据库查询以及退出程序
 func exitHandle(exitChan chan os.Signal) {
-
 	for {
 		select {
 		case sig := <-exitChan:
